@@ -261,7 +261,7 @@
  * Should match atomic_rcu_set(), atomic_xchg(), atomic_cmpxchg().
  */
 #define atomic_rcu_read(ptr)    ({                \
-    typeof(*ptr) _val = atomic_read(ptr);         \
+    __typeof__(*ptr) _val = atomic_read(ptr);     \
     smp_read_barrier_depends();                   \
     _val;                                         \
 })
@@ -305,7 +305,7 @@
  * Just always use the barriers manually by the rules above.
  */
 #define atomic_mb_read(ptr)    ({           \
-    typeof(*ptr) _val = atomic_read(ptr);   \
+    __typeof__(*ptr) _val = atomic_read(ptr);   \
     smp_rmb();                              \
     _val;                                   \
 })

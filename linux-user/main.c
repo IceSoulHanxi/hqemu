@@ -31,11 +31,12 @@
 #include "qemu/envlist.h"
 #include "elf.h"
 #include "exec/log.h"
+#include "hqemu.h"
 
 char *exec_path;
 
 int singlestep;
-static const char *filename;
+const char *filename;
 static const char *argv0;
 static int gdbstub_port;
 static envlist_t *envlist;
@@ -115,7 +116,10 @@ static int pending_cpus;
 /* Make sure everything is in a consistent state for calling fork().  */
 void fork_start(void)
 {
-    qemu_mutex_lock(&tcg_ctx.tb_ctx.tb_lock);
+#if defined(CONFIG_LLVM)
+    llvm_fork_start();
+#endif
+    qemu_mutex_lock(&tcg_ctx.tb_ctx->tb_lock);
     pthread_mutex_lock(&exclusive_lock);
     mmap_fork_start();
 }
@@ -137,12 +141,15 @@ void fork_end(int child)
         pthread_mutex_init(&cpu_list_mutex, NULL);
         pthread_cond_init(&exclusive_cond, NULL);
         pthread_cond_init(&exclusive_resume, NULL);
-        qemu_mutex_init(&tcg_ctx.tb_ctx.tb_lock);
+        qemu_mutex_init(&tcg_ctx.tb_ctx->tb_lock);
         gdbserver_fork(thread_cpu);
     } else {
         pthread_mutex_unlock(&exclusive_lock);
-        qemu_mutex_unlock(&tcg_ctx.tb_ctx.tb_lock);
+        qemu_mutex_unlock(&tcg_ctx.tb_ctx->tb_lock);
     }
+#if defined(CONFIG_LLVM)
+    llvm_fork_end(child);
+#endif
 }
 
 /* Wait for pending exclusive operations to complete.  The exclusive lock
@@ -285,6 +292,9 @@ void cpu_loop(CPUX86State *env)
     int trapnr;
     abi_ulong pc;
     target_siginfo_t info;
+
+    copy_tcg_context();
+    optimization_init(env);
 
     for(;;) {
         cpu_exec_start(cs);
@@ -716,6 +726,9 @@ void cpu_loop(CPUARMState *env)
     target_siginfo_t info;
     uint32_t addr;
 
+    copy_tcg_context();
+    optimization_init(env);
+
     for(;;) {
         cpu_exec_start(cs);
         trapnr = cpu_arm_exec(cs);
@@ -1046,6 +1059,9 @@ void cpu_loop(CPUARMState *env)
     int trapnr, sig;
     target_siginfo_t info;
 
+    copy_tcg_context();
+    optimization_init(env);
+
     for (;;) {
         cpu_exec_start(cs);
         trapnr = cpu_arm_exec(cs);
@@ -1128,6 +1144,9 @@ void cpu_loop(CPUUniCore32State *env)
     int trapnr;
     unsigned int n, insn;
     target_siginfo_t info;
+
+    copy_tcg_context();
+    optimization_init(env);
 
     for (;;) {
         cpu_exec_start(cs);
@@ -1328,6 +1347,9 @@ void cpu_loop (CPUSPARCState *env)
     int trapnr;
     abi_long ret;
     target_siginfo_t info;
+
+    copy_tcg_context();
+    optimization_init(env);
 
     while (1) {
         cpu_exec_start(cs);
@@ -1597,6 +1619,9 @@ void cpu_loop(CPUPPCState *env)
     target_siginfo_t info;
     int trapnr;
     target_ulong ret;
+
+    copy_tcg_context();
+    optimization_init(env);
 
     for(;;) {
         cpu_exec_start(cs);
@@ -2450,6 +2475,9 @@ void cpu_loop(CPUMIPSState *env)
     unsigned int syscall_num;
 # endif
 
+    copy_tcg_context();
+    optimization_init(env);
+
     for(;;) {
         cpu_exec_start(cs);
         trapnr = cpu_mips_exec(cs);
@@ -2685,6 +2713,9 @@ void cpu_loop(CPUOpenRISCState *env)
     CPUState *cs = CPU(openrisc_env_get_cpu(env));
     int trapnr, gdbsig;
 
+    copy_tcg_context();
+    optimization_init(env);
+
     for (;;) {
         cpu_exec_start(cs);
         trapnr = cpu_openrisc_exec(cs);
@@ -2774,6 +2805,9 @@ void cpu_loop(CPUSH4State *env)
     int trapnr, ret;
     target_siginfo_t info;
 
+    copy_tcg_context();
+    optimization_init(env);
+
     while (1) {
         cpu_exec_start(cs);
         trapnr = cpu_sh4_exec(cs);
@@ -2835,7 +2869,10 @@ void cpu_loop(CPUCRISState *env)
     CPUState *cs = CPU(cris_env_get_cpu(env));
     int trapnr, ret;
     target_siginfo_t info;
-    
+
+    copy_tcg_context();
+    optimization_init(env);
+
     while (1) {
         cpu_exec_start(cs);
         trapnr = cpu_cris_exec(cs);
@@ -2855,13 +2892,13 @@ void cpu_loop(CPUCRISState *env)
 	  /* just indicate that signals should be handled asap */
 	  break;
         case EXCP_BREAK:
-            ret = do_syscall(env, 
-                             env->regs[9], 
-                             env->regs[10], 
-                             env->regs[11], 
-                             env->regs[12], 
-                             env->regs[13], 
-                             env->pregs[7], 
+            ret = do_syscall(env,
+                             env->regs[9],
+                             env->regs[10],
+                             env->regs[11],
+                             env->regs[12],
+                             env->regs[13],
+                             env->pregs[7],
                              env->pregs[11],
                              0, 0);
             env->regs[10] = ret;
@@ -2896,7 +2933,10 @@ void cpu_loop(CPUMBState *env)
     CPUState *cs = CPU(mb_env_get_cpu(env));
     int trapnr, ret;
     target_siginfo_t info;
-    
+
+    copy_tcg_context();
+    optimization_init(env);
+
     while (1) {
         cpu_exec_start(cs);
         trapnr = cpu_mb_exec(cs);
@@ -2919,13 +2959,13 @@ void cpu_loop(CPUMBState *env)
             /* Return address is 4 bytes after the call.  */
             env->regs[14] += 4;
             env->sregs[SR_PC] = env->regs[14];
-            ret = do_syscall(env, 
-                             env->regs[12], 
-                             env->regs[5], 
-                             env->regs[6], 
-                             env->regs[7], 
-                             env->regs[8], 
-                             env->regs[9], 
+            ret = do_syscall(env,
+                             env->regs[12],
+                             env->regs[5],
+                             env->regs[6],
+                             env->regs[7],
+                             env->regs[8],
+                             env->regs[9],
                              env->regs[10],
                              0, 0);
             env->regs[3] = ret;
@@ -3001,6 +3041,9 @@ void cpu_loop(CPUM68KState *env)
     unsigned int n;
     target_siginfo_t info;
     TaskState *ts = cs->opaque;
+
+    copy_tcg_context();
+    optimization_init(env);
 
     for(;;) {
         cpu_exec_start(cs);
@@ -3138,6 +3181,9 @@ void cpu_loop(CPUAlphaState *env)
     int trapnr;
     target_siginfo_t info;
     abi_long sysret;
+
+    copy_tcg_context();
+    optimization_init(env);
 
     while (1) {
         cpu_exec_start(cs);
@@ -3326,6 +3372,9 @@ void cpu_loop(CPUS390XState *env)
     int trapnr, n, sig;
     target_siginfo_t info;
     target_ulong addr;
+
+    copy_tcg_context();
+    optimization_init(env);
 
     while (1) {
         cpu_exec_start(cs);
@@ -3631,6 +3680,9 @@ void cpu_loop(CPUTLGState *env)
     CPUState *cs = CPU(tilegx_env_get_cpu(env));
     int trapnr;
 
+    copy_tcg_context();
+    optimization_init(env);
+
     while (1) {
         cpu_exec_start(cs);
         trapnr = cpu_tilegx_exec(cs);
@@ -3709,7 +3761,7 @@ void stop_all_tasks(void)
 void init_task_state(TaskState *ts)
 {
     int i;
- 
+
     ts->used = 1;
     ts->first_free = ts->sigqueue_table;
     for (i = 0; i < MAX_SIGQUEUE_SIZE - 1; i++) {
@@ -3740,7 +3792,7 @@ CPUArchState *cpu_copy(CPUArchState *env)
         cpu_breakpoint_insert(new_cpu, bp->pc, bp->flags, NULL);
     }
     QTAILQ_FOREACH(wp, &cpu->watchpoints, entry) {
-        cpu_watchpoint_insert(new_cpu, wp->vaddr, wp->len, wp->flags, NULL);
+        cpu_watchpoint_insert(new_cpu, wp->addr, wp->len, wp->flags, NULL);
     }
 
     return new_env;
@@ -4037,6 +4089,12 @@ static void usage(int exitcode)
            "    QEMU_SET_ENV=var1=val2,var2=val2 QEMU_UNSET_ENV=LD_PRELOAD,LD_DEBUG\n"
            "Note that if you provide several changes to a single variable\n"
            "the last change will stay in effect.\n");
+
+#if defined(CONFIG_LLVM)
+    printf("\n\nHQEMU ");
+    fflush(stdout);
+    hqemu_help();
+#endif
 
     exit(exitcode);
 }
@@ -4353,7 +4411,11 @@ int main(int argc, char **argv, char **envp)
     /* Now that we've loaded the binary, GUEST_BASE is fixed.  Delay
        generating the prologue until now so that the prologue can take
        the real value of GUEST_BASE into account.  */
-    tcg_prologue_init(&tcg_ctx);
+    tcg_prologue_init(&tcg_ctx_global);
+
+#if defined(CONFIG_LLVM)
+    llvm_init();
+#endif
 
 #if defined(TARGET_I386)
     env->cr[0] = CR0_PG_MASK | CR0_WP_MASK | CR0_PE_MASK;
@@ -4578,23 +4640,23 @@ int main(int argc, char **argv, char **envp)
         env->regs[12] = regs->r12;
         env->regs[13] = regs->r13;
         env->regs[14] = regs->r14;
-        env->regs[15] = regs->r15;	    
-        env->regs[16] = regs->r16;	    
-        env->regs[17] = regs->r17;	    
-        env->regs[18] = regs->r18;	    
-        env->regs[19] = regs->r19;	    
-        env->regs[20] = regs->r20;	    
-        env->regs[21] = regs->r21;	    
-        env->regs[22] = regs->r22;	    
-        env->regs[23] = regs->r23;	    
-        env->regs[24] = regs->r24;	    
-        env->regs[25] = regs->r25;	    
-        env->regs[26] = regs->r26;	    
-        env->regs[27] = regs->r27;	    
-        env->regs[28] = regs->r28;	    
-        env->regs[29] = regs->r29;	    
-        env->regs[30] = regs->r30;	    
-        env->regs[31] = regs->r31;	    
+        env->regs[15] = regs->r15;
+        env->regs[16] = regs->r16;
+        env->regs[17] = regs->r17;
+        env->regs[18] = regs->r18;
+        env->regs[19] = regs->r19;
+        env->regs[20] = regs->r20;
+        env->regs[21] = regs->r21;
+        env->regs[22] = regs->r22;
+        env->regs[23] = regs->r23;
+        env->regs[24] = regs->r24;
+        env->regs[25] = regs->r25;
+        env->regs[26] = regs->r26;
+        env->regs[27] = regs->r27;
+        env->regs[28] = regs->r28;
+        env->regs[29] = regs->r29;
+        env->regs[30] = regs->r30;
+        env->regs[31] = regs->r31;
         env->sregs[SR_PC] = regs->pc;
     }
 #elif defined(TARGET_MIPS)
@@ -4656,7 +4718,7 @@ int main(int argc, char **argv, char **envp)
 	    env->regs[12] = regs->r12;
 	    env->regs[13] = regs->r13;
 	    env->regs[14] = info->start_stack;
-	    env->regs[15] = regs->acr;	    
+	    env->regs[15] = regs->acr;
 	    env->pc = regs->erp;
     }
 #elif defined(TARGET_S390X)
@@ -4698,6 +4760,7 @@ int main(int argc, char **argv, char **envp)
         }
         gdb_handlesig(cpu, 0);
     }
+
     cpu_loop(env);
     /* never exits */
     return 0;

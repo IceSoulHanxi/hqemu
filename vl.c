@@ -4662,6 +4662,7 @@ int main(int argc, char **argv, char **envp)
 #ifdef CONFIG_TPM
     tpm_cleanup();
 #endif
+    qemu_end_cpu_loop();
 
     return 0;
 }

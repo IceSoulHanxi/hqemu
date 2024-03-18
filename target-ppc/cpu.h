@@ -87,7 +87,6 @@
 
 /*****************************************************************************/
 /* MMU model                                                                 */
-typedef enum powerpc_mmu_t powerpc_mmu_t;
 enum powerpc_mmu_t {
     POWERPC_MMU_UNKNOWN    = 0x00000000,
     /* Standard 32 bits PowerPC MMU                            */
@@ -132,10 +131,10 @@ enum powerpc_mmu_t {
                              | 0x00000004,
 #endif /* defined(TARGET_PPC64) */
 };
+typedef enum powerpc_mmu_t powerpc_mmu_t;
 
 /*****************************************************************************/
 /* Exception model                                                           */
-typedef enum powerpc_excp_t powerpc_excp_t;
 enum powerpc_excp_t {
     POWERPC_EXCP_UNKNOWN   = 0,
     /* Standard PowerPC exception model */
@@ -171,6 +170,7 @@ enum powerpc_excp_t {
     POWERPC_EXCP_POWER8,
 #endif /* defined(TARGET_PPC64) */
 };
+typedef enum powerpc_excp_t powerpc_excp_t;
 
 /*****************************************************************************/
 /* Exception vectors definitions                                             */
@@ -299,7 +299,6 @@ enum {
 
 /*****************************************************************************/
 /* Input pins model                                                          */
-typedef enum powerpc_input_t powerpc_input_t;
 enum powerpc_input_t {
     PPC_FLAGS_INPUT_UNKNOWN = 0,
     /* PowerPC 6xx bus                  */
@@ -317,6 +316,7 @@ enum powerpc_input_t {
     /* Freescale RCPU bus               */
     PPC_FLAGS_INPUT_RCPU,
 };
+typedef enum powerpc_input_t powerpc_input_t;
 
 #define PPC_INPUT(env) (env->bus_model)
 
@@ -1197,6 +1197,8 @@ struct CPUPPCState {
     uint32_t tm_vscr;
     uint64_t tm_dscr;
     uint64_t tm_tar;
+
+    CPU_OPTIMIZATION_COMMON
 };
 
 #define SET_FIT_PERIOD(a_, b_, c_, d_)          \
@@ -2310,6 +2312,17 @@ static inline void cpu_get_tb_cpu_state(CPUPPCState *env, target_ulong *pc,
     *flags = env->hflags;
 }
 
+static inline target_ulong cpu_get_pc(CPUPPCState *env)
+{
+    return env->nip;
+}
+
+static inline int cpu_check_state(CPUPPCState *env,
+                                  target_ulong cs_base, int flags)
+{
+    return cs_base == 0 && (uint32_t)flags == env->hflags;
+}
+
 #if !defined(CONFIG_USER_ONLY)
 static inline int booke206_tlbm_id(CPUPPCState *env, ppcmas_tlb_t *tlbm)
 {
@@ -2395,7 +2408,7 @@ static inline uint32_t booke206_tlbnps(CPUPPCState *env, const int tlbn)
         uint32_t tlbncfg = env->spr[SPR_BOOKE_TLB0CFG + tlbn];
         uint32_t min = (tlbncfg & TLBnCFG_MINSIZE) >> TLBnCFG_MINSIZE_SHIFT;
         uint32_t max = (tlbncfg & TLBnCFG_MAXSIZE) >> TLBnCFG_MAXSIZE_SHIFT;
-        int i;
+        unsigned i;
         for (i = min; i <= max; i++) {
             ret |= (1 << (i << 1));
         }

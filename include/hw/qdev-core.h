@@ -8,6 +8,8 @@
 #include "hw/irq.h"
 #include "hw/hotplug.h"
 
+#define typename QEMUtypename
+
 enum {
     DEV_NVECTORS_UNSPECIFIED = -1,
 };
@@ -398,5 +400,7 @@ static inline bool qbus_is_hotpluggable(BusState *bus)
 
 void device_listener_register(DeviceListener *listener);
 void device_listener_unregister(DeviceListener *listener);
+
+#undef typename
 
 #endif

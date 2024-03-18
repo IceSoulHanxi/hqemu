@@ -30,6 +30,10 @@
 #include "qapi/qmp/qint.h"
 #include "qapi/qmp/qstring.h"
 
+#define Type     QEMUType
+#define class    QEMUclass
+#define typename QEMUtypename
+
 #define MAX_INTERFACES 32
 
 typedef struct InterfaceImpl InterfaceImpl;
@@ -2318,3 +2322,7 @@ static void register_types(void)
 }
 
 type_init(register_types)
+
+#undef Type
+#undef class
+#undef typename
